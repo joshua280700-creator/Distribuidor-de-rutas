@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Distribuidor de Rutas</title>
+    <title>Distribuidor de Viajes</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f9f9f9; }
         .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        textarea { width: 100%; height: 150px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; }
-        input { padding: 8px; width: 60px; margin-right: 10px; }
+        input[type="file"] { margin-bottom: 15px; display: block; font-size: 15px; }
+        input[type="number"] { padding: 8px; width: 60px; margin-right: 10px; }
         button { padding: 10px 20px; background: #0056b3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button:hover { background: #004494; }
         pre { white-space: pre-wrap; background: #f1f1f1; padding: 15px; border-radius: 5px; font-family: inherit; line-height: 1.5; }
@@ -17,16 +18,14 @@
 <body>
 
     <div class="panel">
-        <h2>Balanceador de Rutas</h2>
-        <p>1. Pega aquí las 3 columnas directo de tu hoja (Viaje, Estado, Conductor):</p>
-        <textarea id="datosInput" placeholder="Ejemplo:
-11834	Finalizado	Jose Carlos Luna Hernandez
-11835	En Ruta de Entrega	Jose de Jesus Contreras Rios"></textarea>
+        <h2>Balanceador de Viajes Logísticos</h2>
+        <p>1. Selecciona tu archivo del control diario (.csv o .xlsx):</p>
+        <input type="file" id="archivoInput" accept=".csv, .xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
         
-        <div style="margin-top: 10px;">
+        <div style="margin-top: 15px;">
             <label>Número de Supervisores activos:</label>
             <input type="number" id="numSupervisores" value="4" min="1">
-            <button onclick="generarDistribucion()">Generar Lista</button>
+            <button onclick="procesarArchivo()">Generar Lista</button>
         </div>
     </div>
 
@@ -36,93 +35,124 @@
     </div>
 
     <script>
-        function generarDistribucion() {
-            const rawData = document.getElementById('datosInput').value.trim();
+        function procesarArchivo() {
+            const fileInput = document.getElementById('archivoInput');
             const numSup = parseInt(document.getElementById('numSupervisores').value);
-            
-            if (!rawData) {
-                alert("Por favor pega los datos primero.");
+
+            if (!fileInput.files.length) {
+                alert("Por favor sube un archivo primero.");
                 return;
             }
 
-            // 1. Parsear los datos pegados (separados por tabulador si vienen de Excel/Sheets)
-            const lineas = rawData.split('\n');
-            const conductores = {};
+            const file = fileInput.files[0];
+            const reader = new FileReader();
 
-            lineas.forEach(linea => {
-                const partes = linea.split('\t');
-                if (partes.length >= 3) {
-                    const viaje = partes[0].trim();
-                    const estado = partes[1].trim();
-                    const nombre = partes[2].trim();
-
-                    if (!conductores[nombre]) {
-                        conductores[nombre] = { activas: [], finalizadas: [], total: 0 };
-                    }
-                    if (estado.toLowerCase().includes('finalizado')) {
-                        conductores[nombre].finalizadas.push(viaje);
-                    } else {
-                        conductores[nombre].activas.push(viaje);
-                    }
-                    conductores[nombre].total++;
-                }
-            });
-
-            // 2. Ordenar conductores por mayor cantidad de viajes para balancear mejor
-            const listaConductores = Object.keys(conductores).map(nombre => ({
-                nombre,
-                ...conductores[nombre]
-            })).sort((a, b) => b.total - a.total);
-
-            // 3. Crear los supervisores
-            const supervisores = Array.from({ length: numSup }, (_, i) => ({
-                id: i + 1,
-                conductoresAsignados: [],
-                totalRutas: 0,
-                totalActivas: 0,
-                totalFinalizadas: 0
-            }));
-
-            // 4. Distribuir al supervisor con menor carga
-            listaConductores.forEach(conductor => {
-                supervisores.sort((a, b) => a.totalRutas - b.totalRutas);
-                const supSeleccionado = supervisores[0];
-
-                supSeleccionado.conductoresAsignados.push(conductor);
-                supSeleccionado.totalRutas += conductor.total;
-                supSeleccionado.totalActivas += conductor.activas.length;
-                supSeleccionado.totalFinalizadas += conductor.finalizadas.length;
-            });
-
-            // 5. Generar el texto de salida igual al que pediste
-            supervisores.sort((a, b) => a.id - b.id);
-            let textoSalida = "";
-
-            supervisores.forEach(sup => {
-                textoSalida += `### **Supervisor ${sup.id} (Total: ${sup.totalRutas} Rutas | ${sup.totalActivas} Activas, ${sup.totalFinalizadas} Finalizadas)**\n`;
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
                 
-                const conActivas = sup.conductoresAsignados.filter(c => c.activas.length > 0);
-                const conFinalizadas = sup.conductoresAsignados.filter(c => c.activas.length === 0 && c.finalizadas.length > 0);
+                // Tomar la primera hoja del archivo
+                const primeraHoja = workbook.Sheets[workbook.SheetNames[0]];
+                // Convertir la hoja a un arreglo de filas
+                const filas = XLSX.utils.sheet_to_json(primeraHoja, { header: 1 });
 
-                if (conActivas.length > 0) {
-                    textoSalida += `*(Conductores con rutas Activas)*\n`;
-                    conActivas.forEach(c => {
-                        let detalle = `* **${c.nombre}:** ${c.total} ruta${c.total > 1 ? 's' : ''} `;
-                        if (c.activas.length > 0) detalle += `*(Activa: ${c.activas.join(', ')})*`;
-                        textoSalida += detalle + '\n';
-                    });
+                if (filas.length < 2) {
+                    alert("El archivo parece estar vacío o no tiene el formato correcto.");
+                    return;
                 }
 
-                if (conFinalizadas.length > 0) {
-                    textoSalida += `*(Conductores solo con rutas Finalizadas)*\n`;
-                    conFinalizadas.forEach(c => {
-                        textoSalida += `* ${c.nombre}: ${c.total} ruta${c.total > 1 ? 's' : ''} *(${c.finalizadas.join(', ')})*\n`;
-                    });
-                }
-                textoSalida += '\n';
-            });
+                // Buscar en qué número de columna están los datos leyendo los encabezados
+                const encabezados = filas[0].map(h => String(h).toLowerCase().trim());
+                let colID = encabezados.indexOf('id');
+                let colEstado = encabezados.indexOf('estado');
+                let colConductor = encabezados.indexOf('conductor');
 
-            document.getElementById('resultadoSalida').innerText = textoSalida;
+                // Si por alguna razón cambian los encabezados, asume el orden estándar de las columnas
+                if (colID === -1) colID = 0;
+                if (colEstado === -1) colEstado = 3;
+                if (colConductor === -1) colConductor = 4;
+
+                const conductores = {};
+
+                // Procesar desde la fila 1 (brincando los encabezados)
+                for (let i = 1; i < filas.length; i++) {
+                    const fila = filas[i];
+                    if (fila.length > colConductor && fila[colID] && fila[colConductor]) {
+                        const viaje = String(fila[colID]).trim();
+                        const estado = String(fila[colEstado] || '').trim().toLowerCase();
+                        const nombre = String(fila[colConductor]).trim();
+
+                        if (!conductores[nombre]) {
+                            conductores[nombre] = { activas: [], finalizadas: [], total: 0 };
+                        }
+                        
+                        // Agrupar dependiendo si el viaje ya terminó
+                        if (estado.includes('finalizado') || estado.includes('terminada')) {
+                            conductores[nombre].finalizadas.push(viaje);
+                        } else {
+                            conductores[nombre].activas.push(viaje);
+                        }
+                        conductores[nombre].total++;
+                    }
+                }
+
+                // Ordenar conductores por mayor carga de viajes
+                const listaConductores = Object.keys(conductores).map(nombre => ({
+                    nombre,
+                    ...conductores[nombre]
+                })).sort((a, b) => b.total - a.total);
+
+                // Crear los supervisores
+                const supervisores = Array.from({ length: numSup }, (_, i) => ({
+                    id: i + 1,
+                    conductoresAsignados: [],
+                    totalViajes: 0,
+                    totalActivos: 0,
+                    totalFinalizados: 0
+                }));
+
+                // Distribuir balanceadamente buscando al supervisor con menos carga en ese momento
+                listaConductores.forEach(conductor => {
+                    supervisores.sort((a, b) => a.totalViajes - b.totalViajes);
+                    const sup = supervisores[0];
+                    sup.conductoresAsignados.push(conductor);
+                    sup.totalViajes += conductor.total;
+                    sup.totalActivos += conductor.activas.length;
+                    sup.totalFinalizados += conductor.finalizadas.length;
+                });
+
+                // Generar el bloque de texto con el formato exacto
+                supervisores.sort((a, b) => a.id - b.id);
+                let textoSalida = "";
+
+                supervisores.forEach(sup => {
+                    textoSalida += `### **Supervisor ${sup.id} (Total: ${sup.totalViajes} Viajes | ${sup.totalActivos} Activos, ${sup.totalFinalizados} Finalizados)**\n`;
+                    
+                    const conActivos = sup.conductoresAsignados.filter(c => c.activas.length > 0);
+                    const conFinalizados = sup.conductoresAsignados.filter(c => c.activas.length === 0 && c.finalizadas.length > 0);
+
+                    if (conActivos.length > 0) {
+                        textoSalida += `*(Conductores con viajes Activos)*\n`;
+                        conActivos.forEach(c => {
+                            let detalle = `* **${c.nombre}:** ${c.total} viaje${c.total > 1 ? 's' : ''} `;
+                            if (c.activas.length > 0) detalle += `*(Activo: ${c.activas.join(', ')})*`;
+                            textoSalida += detalle + '\n';
+                        });
+                    }
+
+                    if (conFinalizados.length > 0) {
+                        textoSalida += `*(Conductores solo con viajes Finalizados)*\n`;
+                        conFinalizados.forEach(c => {
+                            textoSalida += `* ${c.nombre}: ${c.total} viaje${c.total > 1 ? 's' : ''} *(${c.finalizadas.join(', ')})*\n`;
+                        });
+                    }
+                    textoSalida += '\n';
+                });
+
+                document.getElementById('resultadoSalida').innerText = textoSalida;
+            };
+            
+            reader.readAsArrayBuffer(file);
         }
     </script>
 </body>
