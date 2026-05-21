@@ -51,9 +51,7 @@
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
                 
-                // Tomar la primera hoja del archivo
                 const primeraHoja = workbook.Sheets[workbook.SheetNames[0]];
-                // Convertir la hoja a un arreglo de filas
                 const filas = XLSX.utils.sheet_to_json(primeraHoja, { header: 1 });
 
                 if (filas.length < 2) {
@@ -61,20 +59,17 @@
                     return;
                 }
 
-                // Buscar en qué número de columna están los datos leyendo los encabezados
                 const encabezados = filas[0].map(h => String(h).toLowerCase().trim());
                 let colID = encabezados.indexOf('id');
                 let colEstado = encabezados.indexOf('estado');
                 let colConductor = encabezados.indexOf('conductor');
 
-                // Si por alguna razón cambian los encabezados, asume el orden estándar de las columnas
                 if (colID === -1) colID = 0;
                 if (colEstado === -1) colEstado = 3;
                 if (colConductor === -1) colConductor = 4;
 
                 const conductores = {};
 
-                // Procesar desde la fila 1 (brincando los encabezados)
                 for (let i = 1; i < filas.length; i++) {
                     const fila = filas[i];
                     if (fila.length > colConductor && fila[colID] && fila[colConductor]) {
@@ -86,7 +81,6 @@
                             conductores[nombre] = { activas: [], finalizadas: [], total: 0 };
                         }
                         
-                        // Agrupar dependiendo si el viaje ya terminó
                         if (estado.includes('finalizado') || estado.includes('terminada')) {
                             conductores[nombre].finalizadas.push(viaje);
                         } else {
@@ -96,13 +90,11 @@
                     }
                 }
 
-                // Ordenar conductores por mayor carga de viajes
                 const listaConductores = Object.keys(conductores).map(nombre => ({
                     nombre,
                     ...conductores[nombre]
                 })).sort((a, b) => b.total - a.total);
 
-                // Crear los supervisores
                 const supervisores = Array.from({ length: numSup }, (_, i) => ({
                     id: i + 1,
                     conductoresAsignados: [],
@@ -111,7 +103,6 @@
                     totalFinalizados: 0
                 }));
 
-                // Distribuir balanceadamente buscando al supervisor con menos carga en ese momento
                 listaConductores.forEach(conductor => {
                     supervisores.sort((a, b) => a.totalViajes - b.totalViajes);
                     const sup = supervisores[0];
@@ -121,29 +112,29 @@
                     sup.totalFinalizados += conductor.finalizadas.length;
                 });
 
-                // Generar el bloque de texto con el formato exacto
                 supervisores.sort((a, b) => a.id - b.id);
                 let textoSalida = "";
 
                 supervisores.forEach(sup => {
-                    textoSalida += `### **Supervisor ${sup.id} (Total: ${sup.totalViajes} Viajes | ${sup.totalActivos} Activos, ${sup.totalFinalizados} Finalizados)**\n`;
+                    // Texto limpio, sin # ni *
+                    textoSalida += `Supervisor ${sup.id} (Total: ${sup.totalViajes} Viajes | ${sup.totalActivos} Activos, ${sup.totalFinalizados} Finalizados)\n`;
                     
                     const conActivos = sup.conductoresAsignados.filter(c => c.activas.length > 0);
                     const conFinalizados = sup.conductoresAsignados.filter(c => c.activas.length === 0 && c.finalizadas.length > 0);
 
                     if (conActivos.length > 0) {
-                        textoSalida += `*(Conductores con viajes Activos)*\n`;
+                        textoSalida += `(Conductores con viajes Activos)\n`;
                         conActivos.forEach(c => {
-                            let detalle = `* **${c.nombre}:** ${c.total} viaje${c.total > 1 ? 's' : ''} `;
-                            if (c.activas.length > 0) detalle += `*(Activo: ${c.activas.join(', ')})*`;
+                            let detalle = `${c.nombre}: ${c.total} viaje${c.total > 1 ? 's' : ''} `;
+                            if (c.activas.length > 0) detalle += `(Activo: ${c.activas.join(', ')})`;
                             textoSalida += detalle + '\n';
                         });
                     }
 
                     if (conFinalizados.length > 0) {
-                        textoSalida += `*(Conductores solo con viajes Finalizados)*\n`;
+                        textoSalida += `(Conductores solo con viajes Finalizados)\n`;
                         conFinalizados.forEach(c => {
-                            textoSalida += `* ${c.nombre}: ${c.total} viaje${c.total > 1 ? 's' : ''} *(${c.finalizadas.join(', ')})*\n`;
+                            textoSalida += `${c.nombre}: ${c.total} viaje${c.total > 1 ? 's' : ''} (${c.finalizadas.join(', ')})\n`;
                         });
                     }
                     textoSalida += '\n';
