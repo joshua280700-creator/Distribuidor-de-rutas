@@ -77,11 +77,21 @@
                         const estado = String(fila[colEstado] || '').trim().toLowerCase();
                         const nombre = String(fila[colConductor]).trim();
 
+                        // 1. Validar que el estado sea uno de los permitidos
+                        const esFinalizado = estado.includes('finalizado') || estado.includes('terminada');
+                        const esActivo = estado.includes('en ruta de entrega') || estado.includes('fin de carga');
+
+                        // Si no es ninguno de los permitidos, ignorar esta fila y pasar a la siguiente
+                        if (!esFinalizado && !esActivo) {
+                            continue;
+                        }
+
+                        // 2. Si pasa el filtro, lo agregamos al conductor
                         if (!conductores[nombre]) {
                             conductores[nombre] = { activas: [], finalizadas: [], total: 0 };
                         }
                         
-                        if (estado.includes('finalizado') || estado.includes('terminada')) {
+                        if (esFinalizado) {
                             conductores[nombre].finalizadas.push(viaje);
                         } else {
                             conductores[nombre].activas.push(viaje);
@@ -116,7 +126,6 @@
                 let textoSalida = "";
 
                 supervisores.forEach(sup => {
-                    // Texto limpio, sin # ni *
                     textoSalida += `Supervisor ${sup.id} (Total: ${sup.totalViajes} Viajes | ${sup.totalActivos} Activos, ${sup.totalFinalizados} Finalizados)\n`;
                     
                     const conActivos = sup.conductoresAsignados.filter(c => c.activas.length > 0);
@@ -140,7 +149,7 @@
                     textoSalida += '\n';
                 });
 
-                document.getElementById('resultadoSalida').innerText = textoSalida;
+                document.getElementById('resultadoSalida').innerText = textoSalida || "No se encontraron viajes con los estados permitidos.";
             };
             
             reader.readAsArrayBuffer(file);
